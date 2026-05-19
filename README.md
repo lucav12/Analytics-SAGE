@@ -15,7 +15,7 @@ local** para la API de feedback y su documentación técnica.
 
 ## ¿Qué resuelve `feedback_api.py`?
 
-Tres pedidos concretos del equipo IA (Martin):
+Tres pedidos concretos del equipo IA:
 
 1. **Categorías y criterios de evaluación** acordados — base para que el
    pipeline NLP derive un listado de palabras clave alineado.
