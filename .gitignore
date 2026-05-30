@@ -1,5 +1,6 @@
-# Local SQLite DB generada por feedback_api.py
+# DBs SQLite generadas localmente (POC y feedback_api)
 feedback.db
+sage_analytics.db
 *.db
 *.db-journal
 

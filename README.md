@@ -8,10 +8,11 @@ local** para la API de feedback y su documentación técnica.
 
 ## Contenido
 
-| Archivo | Qué es |
+| Ruta | Qué es |
 |---|---|
 | [`feedback_api.py`](feedback_api.py) | API REST self-contained (FastAPI + SQLite) para insertar feedback ya formateado. Define la estructura de datos sobre la que se apoya el modelo definitivo. |
 | [`SAGE-Agent_y_FeedbackAPI.docx`](SAGE-Agent_y_FeedbackAPI.docx) | Documento técnico completo: análisis del backend `sage-agent` archivo por archivo + explicación detallada de `feedback_api.py`. |
+| [`poc_data_model/`](poc_data_model/) | **Prueba de concepto** del modelo de datos extendido (5 tablas). Incluye `schema.sql`, scripts de build/seed/queries y `Modelo_de_Datos.docx` con la explicación pedagógica completa pensada para presentación. |
 
 ## ¿Qué resuelve `feedback_api.py`?
 
