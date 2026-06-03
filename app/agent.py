@@ -1,12 +1,14 @@
 import requests
 import uuid
-from prompts import get_prompt
 from feedback import save_feedback
-from embeddings import IntentMatcher, get_feedback_detector
+from embeddings import IntentMatcher
+import os
+import threading
 
-OLLAMA_URL = "http://localhost:11434/api/chat"
-MODEL = "llama3.2:3b"
-REQUEST_TIMEOUT = 30
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+OLLAMA_URL = f"{OLLAMA_BASE_URL}/api/chat"
+MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+REQUEST_TIMEOUT = int(os.getenv("OLLAMA_REQUEST_TIMEOUT", "30"))
 
 TOKEN_LIMITS = {
     "lista": 400,
@@ -44,22 +46,27 @@ JAILBREAK_RESPONSES = {
 }
 
 class SageAgent:
-    def __init__(self, event_name: str, event_location: str, event_date: str):
-        self.system_prompt = get_prompt(event_name, event_location, event_date)
+    def __init__(self, system_prompt: str):
+        self.system_prompt = system_prompt
         self.history = []
         self.session_id = str(uuid.uuid4())
         self.matcher = IntentMatcher()
-        self._warm_up()
+        threading.Thread(target=self._warm_up, daemon=True).start()
 
     def _warm_up(self):
+        print("[EVA] Warm-up iniciado...")
         try:
             payload = {
                 "model": MODEL,
                 "stream": False,
-                "options": {"num_predict": TOKEN_LIMITS["simple"]},
+                "options": {
+                    "num_predict": TOKEN_LIMITS["simple"],
+                    "temperature": 0.3,
+                    "repeat_penalty": 1.1,
+                },
                 "messages": [
                     {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": "hola"},
+                    *self.history
                 ]
             }
             response = requests.post(OLLAMA_URL, json=payload, timeout=60)
@@ -82,25 +89,29 @@ class SageAgent:
         return None
 
     def _get_token_limit(self, intent: str | None) -> int:
-        if intent in INTENT_TOKEN_LIMITS: #obtiene la cantidad de límite de tokens según el intent (=según el tipo de frase)
+        if intent in INTENT_TOKEN_LIMITS:
             return TOKEN_LIMITS[INTENT_TOKEN_LIMITS[intent]]
         return TOKEN_LIMITS["simple"]
 
     def chat(self, user_message: str) -> str:
-        blocked = self._check_jailbreak(user_message) #si es jailbreak devuelve un mensaje hardcodeado, si no, devuelve None
+        blocked = self._check_jailbreak(user_message)
         if blocked:
             return blocked
 
-        intent, score = self.matcher.match(user_message) #obtiene los mejores "intent" (=tipo de frase) y "score" (=valor calculado)
-        token_limit = self._get_token_limit(intent) #e le ingresa el tipo de frase
-        print(f"[EVA] Intent: {intent} ({score:.3f}) — tokens: {token_limit}") #printea el tipo de frase, el score obtenido y la cantidad de tokens
+        intent, score = self.matcher.match(user_message)
+        token_limit = self._get_token_limit(intent)
+        print(f"[EVA] Intent: {intent} ({score:.3f}) — tokens: {token_limit}")
 
-        self.history.append({"role": "user", "content": user_message}) #suma al historial de conversación el mensaje del usuario
+        self.history.append({"role": "user", "content": user_message})
 
         payload = {
             "model": MODEL,
             "stream": False,
-            "options": {"num_predict": token_limit},
+            "options": {
+                "num_predict": token_limit,
+                "temperature": 0.3,
+                "repeat_penalty": 1.1,
+            },
             "messages": [
                 {"role": "system", "content": self.system_prompt},
                 *self.history
@@ -119,11 +130,8 @@ class SageAgent:
             print(f"[EVA] Error en chat: {e}")
             return "Hubo un problema al procesar tu mensaje. Enseguida consulto con el equipo."
 
-        # in chat():
-        detector = get_feedback_detector()  # already a singleton, no cost
-        is_fb, _ = detector.is_feedback(user_message)
-        if is_fb:
-            save_feedback(self.session_id, user_message, assistant_message, category="feedback")
+        if intent == "feedback":
+            save_feedback(self.session_id, user_message, assistant_message, category=intent)
 
         self.history.append({"role": "assistant", "content": assistant_message})
         return assistant_message
@@ -132,5 +140,3 @@ class SageAgent:
         self.history = []
         self.session_id = str(uuid.uuid4())
         self._warm_up()
-
-

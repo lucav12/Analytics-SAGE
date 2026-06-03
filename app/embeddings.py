@@ -31,6 +31,17 @@ INTENTS = {
         "donde guardo mis cosas", "dejo el bolso",
         "dejo mi cartera", "donde dejar las cosas"
     ],
+    "feedback": [
+        "quiero dejar un comentario", "tengo una opinión",
+        "estuvo muy bien", "me encantó el evento",
+        "estuvo mal", "no me gustó", "muy desorganizado",
+        "larga espera", "tardaron mucho", "felicitaciones",
+        "queja", "sugerencia", "me pareció", "la organización estuvo",
+        "la ceremonia estuvo", "el catering estuvo",
+        "esperé mucho", "excelente", "mejorar",
+        "esperé mucho para acreditarme", "la acreditación tardó",
+        "tardaron en atenderme", "la fila estuvo larga"
+    ],
     "info_egresados": [
         "egresados", "quienes se reciben", "los graduados",
         "quienes son los chicos", "de qué carrera",
@@ -54,22 +65,10 @@ INTENTS = {
     ],
 }
 
-THRESHOLD_DEFAULT = 0.65
+THRESHOLD_DEFAULT = 0.78
 THRESHOLD_BY_INTENT = {
     "feedback": 0.82,
 }
-
-FEEDBACK_SIGNAL_KEYWORDS = [
-    # Positive signals
-    "estuvo", "salió", "quedó", "fue", "me pareció", "me gustó",
-    "me encantó", "perfecto", "genial", "muy bien", "excelente",
-    # Negative signals  
-    "mal", "tarde", "espera", "lento", "desorganizado", "problema",
-    "mejorar", "faltó", "podría ser mejor", "decepcionante",
-    # Opinion markers
-    "creo que", "pienso que", "en mi opinión", "a mi parecer",
-    "la verdad", "sinceramente", "honestamente",
-]
 
 def get_embedding(text: str) -> list[float]:
     response = requests.post(OLLAMA_URL, json={
@@ -88,19 +87,17 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
     return dot / (mag_a * mag_b)
 
 class IntentMatcher:
-    def __init__(self, intents: dict[str, list[str]] | None = None, thresholds: dict[str, float] | None = None):
-        self.intents = intents or INTENTS
-        self.thresholds = thresholds or THRESHOLD_BY_INTENT
+    def __init__(self):
         self.intent_vectors: dict[str, list[list[float]]] = {}
         self._build_index()
 
     def _build_index(self):
         print("[EVA Embeddings] Vectorizando intents...")
-        for intent, phrases in self.intents.items():
+        for intent, phrases in INTENTS.items():
             self.intent_vectors[intent] = [
                 get_embedding(phrase) for phrase in phrases
             ]
-        print(f"[EVA Embeddings] Listo — {len(self.intent_vectors)} intents indexados.")
+        print(f"[EVA Embeddings] Listo — {len(INTENTS)} intents indexados.")
 
     def get_embedding(self, text: str) -> list[float]:
         return get_embedding(text)
@@ -111,6 +108,7 @@ class IntentMatcher:
         best_score = 0.0
 
         for intent, vectors in self.intent_vectors.items():
+            threshold = THRESHOLD_BY_INTENT.get(intent, THRESHOLD_DEFAULT)
             for vec in vectors:
                 score = cosine_similarity(message_vec, vec)
                 if score > best_score:
@@ -118,102 +116,12 @@ class IntentMatcher:
                     best_intent = intent
 
         if best_intent:
-            thresholds = getattr(self, "thresholds", THRESHOLD_BY_INTENT)
-            threshold = thresholds.get(best_intent, THRESHOLD_DEFAULT)
+            threshold = THRESHOLD_BY_INTENT.get(best_intent, THRESHOLD_DEFAULT)
             if best_score >= threshold:
                 return best_intent, best_score
 
         return None, best_score
 
-    def match_all(self, message: str, min_score: float | None = None) -> list[tuple[str, float]]:
-        message_vec = get_embedding(message)
-        matches: list[tuple[str, float]] = []
-
-        for intent, vectors in self.intent_vectors.items():
-            best_score = max(cosine_similarity(message_vec, vec) for vec in vectors)
-            thresholds = getattr(self, "thresholds", THRESHOLD_BY_INTENT)
-            threshold = thresholds.get(intent, THRESHOLD_DEFAULT)
-            if min_score is not None:
-                threshold = min_score
-            if best_score >= threshold:
-                matches.append((intent, best_score))
-
-        return sorted(matches, key=lambda pair: pair[1], reverse=True)
-
-    # def is_feedback(self, message: str) -> bool:
-    #     """Two-stage feedback detection: embedding similarity + keyword fallback."""
-    #     # Stage 1: embedding-based intent match (your existing logic)
-    #     intent, score = self.match(message)
-    #     if intent == "feedback":
-    #         return True
-
-    #     # Stage 2: keyword fallback for indirect feedback
-    #     # Only triggers if embedding score was close but below threshold
-    #     _, raw_score = self.match(message)  # already computed, but explicit here
-    #     normalized = message.strip().lower()
-    #     has_signal = any(kw in normalized for kw in FEEDBACK_SIGNAL_KEYWORDS)
-
-    #     # Soft threshold: if score is close (≥0.70) AND there's a lexical signal, count it
-    #     SOFT_THRESHOLD = 0.70
-    #     if raw_score >= SOFT_THRESHOLD and has_signal:
-    #         return True
-
-    #     return False
     def is_feedback(self, message: str) -> bool:
-        detector = get_feedback_detector()
-        is_fb, _ = detector.is_feedback(message)
-        return is_fb
-
-#first it checks if the message is feedback or a question, then it classifies the intent.
-FEEDBACK_DETECTION_EXAMPLES = [
-    # Opinions / evaluations
-    "la comida estuvo muy rica",
-    "las bebidas estuvieron malas",
-    "me encantó la ceremonia",
-    "el acto fue muy interesante",
-    "me pareció que la organización estuvo excelente",
-    "estuvo mal la salida",
-    "no me gustó el acceso al evento",
-    "la acreditación fue bastante rápida pero muy desorganizada",
-    "la espera fue bastante corta pero tardaron en traer comida",
-    "tengo que decir que realmente las bebidas estuvieron malas",
-    "me pareció un evento muy bien organizado",
-    "la planificación estuvo excelente",
-    "no me gusta la comida",
-    "me gusta mucho la ceremonia",
-    # Experiential complaints — personal experience with implicit negative judgment
-    "esperé muchísimo para acreditarme",
-    "tardé una hora en entrar",
-    "no encontré dónde sentarme",
-    "me perdí dentro del lugar",
-    "tuve que hacer una fila enorme",
-    "no llegué a comer nada porque se acabó todo",
-    "casi no escucho nada desde donde estaba",
-]
-
-FEEDBACK_DETECTION_THRESHOLD = 0.80
-
-_FEEDBACK_DETECTOR: "FeedbackDetector | None" = None
-
-class FeedbackDetector:
-    def __init__(self):
-        print("[EVA] Vectorizando detector de feedback...")
-        self.feedback_vecs = [get_embedding(p) for p in FEEDBACK_DETECTION_EXAMPLES]
-        # Flatten all INTENTS phrases as the non-feedback corpus
-        non_feedback_phrases = [phrase for phrases in INTENTS.values() for phrase in phrases]
-        self.non_feedback_vecs = [get_embedding(p) for p in non_feedback_phrases]
-        print("[EVA] Detector de feedback listo.")
-
-    def is_feedback(self, message: str) -> tuple[bool, float]:
-        vec = get_embedding(message)
-        feedback_score = max(cosine_similarity(vec, v) for v in self.feedback_vecs)
-        non_feedback_score = max(cosine_similarity(vec, v) for v in self.non_feedback_vecs)
-        # It's feedback if it's closer to opinions than to questions
-        is_fb = feedback_score > non_feedback_score and feedback_score >= FEEDBACK_DETECTION_THRESHOLD
-        return is_fb, feedback_score    
-
-def get_feedback_detector() -> FeedbackDetector:
-    global _FEEDBACK_DETECTOR
-    if _FEEDBACK_DETECTOR is None:
-        _FEEDBACK_DETECTOR = FeedbackDetector()
-    return _FEEDBACK_DETECTOR
+        intent, _ = self.match(message)
+        return intent == "feedback"

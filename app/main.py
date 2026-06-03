@@ -1,13 +1,22 @@
+from pydantic import BaseModel
+from dotenv import load_dotenv
+
+load_dotenv()
+
 import asyncio
 import json
 import os
 import threading
 from typing import AsyncIterator
-
+import subprocess
+import tempfile
+from fastapi.responses import FileResponse
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from prompt_builder import build_prompt
+from event_store import get_current_event, save_event
+from prompts import get_prompt
 
 from agent import SageAgent
 
@@ -35,11 +44,45 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-agent = SageAgent(
-    event_name="Entrega de Diplomas AHK 2026",
-    event_location="Centro de Convenciones, Av. Corrientes, Buenos Aires",
-    event_date="15 de Agosto de 2026"
-)
+agent = None
+
+PROMPT_SOURCE = os.getenv("PROMPT_SOURCE", "hardcoded")
+
+@app.on_event("startup")
+async def startup():
+    global agent
+    if PROMPT_SOURCE == "dynamic":
+        print("[EVA] Usando prompt dinámico desde event_store")
+        event_data = get_current_event()
+        system_prompt = build_prompt(event_data)
+    else:
+        print("[EVA] Usando prompt hardcodeado desde prompts.py")
+        system_prompt = get_prompt(
+            event_name="Entrega de Diplomas AHK 2026",
+            event_location="Centro de Convenciones, Av. Corrientes, Buenos Aires",
+            event_date="15 de Agosto de 2026"
+        )
+    agent = SageAgent(system_prompt=system_prompt)
+    threading.Thread(target=_background_warmup, daemon=True).start()
+
+def _background_warmup():
+    import asyncio
+    asyncio.run(warmup_piper())
+
+async def warmup_piper():
+    try:
+        print("[EVA TTS] Primeando Piper...")
+        process = subprocess.run(
+            [PIPER_BIN, "--model", PIPER_MODEL, "--output_file", "/tmp/warmup.wav"],
+            input="hola".encode(),
+            capture_output=True
+        )
+        if process.returncode == 0:
+            print("[EVA TTS] Piper listo.")
+        else:
+            print("[EVA TTS] Warmup de Piper falló.")
+    except Exception as e:
+        print(f"[EVA TTS] Error en warmup: {e}")
 
 class MessageRequest(BaseModel):
     mensaje: str
@@ -109,6 +152,47 @@ async def chat_stream(request: MessageRequest):
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
         },
+    )
+
+PIPER_BIN = os.getenv("PIPER_BIN", "/home/martin/piper/piper/piper")
+PIPER_MODEL = os.getenv("PIPER_MODEL", "/home/martin/piper/models/es_AR-daniela-high.onnx")
+
+class TTSRequest(BaseModel):
+    texto: str
+
+@app.get("/eventos/actual")
+def get_evento_actual():
+    return get_current_event()
+
+@app.post("/configure")
+async def configure(event_data: dict):
+    global agent
+    save_event(event_data)
+    new_prompt = build_prompt(event_data)
+    agent = SageAgent(system_prompt=new_prompt)
+    threading.Thread(target=warmup_piper).start()
+    print(f"[EVA] Reconfigurada para: {event_data.get('nombre', '')}")
+    return {"status": f"EVA configurada para {event_data.get('nombre', '')}"}
+
+@app.post("/tts")
+async def tts(request: TTSRequest):
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+        output_path = f.name
+
+    process = subprocess.run(
+        [PIPER_BIN, "--model", PIPER_MODEL, "--output_file", output_path],
+        input=request.texto.encode(),
+        capture_output=True
+    )
+
+    if process.returncode != 0:
+        return {"error": "TTS falló"}
+
+    return FileResponse(
+        output_path,
+        media_type="audio/wav",
+        filename="eva_tts.wav",
+        background=None
     )
 
 @app.post("/reset")
