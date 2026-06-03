@@ -1,7 +1,7 @@
 import requests
 import uuid
 from feedback import save_feedback
-from embeddings import IntentMatcher
+from embeddings import IntentMatcher, get_feedback_detector
 import os
 import threading
 
@@ -130,8 +130,16 @@ class SageAgent:
             print(f"[EVA] Error en chat: {e}")
             return "Hubo un problema al procesar tu mensaje. Enseguida consulto con el equipo."
 
-        if intent == "feedback":
-            save_feedback(self.session_id, user_message, assistant_message, category=intent)
+        # Detección de feedback en dos capas:
+        #   (1) intent matcher principal — categoría "feedback" del catálogo INTENTS;
+        #   (2) FeedbackDetector binario — compara contra un corpus de opiniones.
+        # save_feedback() después clasifica multi-categoría y calcula
+        # happiness/NPS/return_likelihood (ver feedback.py).
+        is_feedback = intent == "feedback"
+        if not is_feedback:
+            is_feedback, _ = get_feedback_detector().is_feedback(user_message)
+        if is_feedback:
+            save_feedback(self.session_id, user_message, assistant_message)
 
         self.history.append({"role": "assistant", "content": assistant_message})
         return assistant_message
