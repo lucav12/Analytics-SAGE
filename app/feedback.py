@@ -20,6 +20,7 @@ from datetime import datetime
 from pathlib import Path
 
 from embeddings import IntentMatcher
+import db  # Persistencia opcional en Postgres (no-op si DATABASE_URL no está seteada)
 
 FEEDBACK_FILE = Path(__file__).parent / "feedback_log.json"
 
@@ -232,6 +233,8 @@ def save_feedback(
     eva_response: str,
     category: str | None = None,
     categories: list[str] | None = None,
+    message_id: str | None = None,
+    source: str = "auto_intent",
 ):
     if categories is None:
         matches = classify_feedback_with_scores(user_message)
@@ -283,4 +286,15 @@ def save_feedback(
         f"({', '.join(categories)}) — happiness: {happiness_score} "
         f"— NPS: {net_promoter_score} — volver: {return_likelihood_score}"
     )
+
+    # Persistencia opcional en Postgres. Si DATABASE_URL no está seteada o
+    # psycopg no está instalado, db.insert_feedback es no-op.
+    if message_id:
+        try:
+            fb_id = db.insert_feedback(entry, message_id, source=source)
+            if fb_id:
+                print(f"[EVA DB] Feedback persistido en Postgres: {fb_id}")
+        except Exception as e:
+            print(f"[EVA DB] No se pudo persistir feedback: {e}")
+
     return entry
