@@ -121,7 +121,12 @@ class IntentMatcher:
         return get_embedding(text)
 
     def _threshold_for(self, intent: str) -> float:
-        return self.thresholds.get(intent, THRESHOLD_DEFAULT)
+        # `_check_jailbreak()` en agent.py construye un IntentMatcher temporal
+        # con `__new__` (saltándose __init__) para no re-vectorizar todos los
+        # intents — ese matcher no tiene `self.thresholds`. Usamos getattr para
+        # ser defensivos y caer al diccionario global.
+        thresholds = getattr(self, "thresholds", None) or THRESHOLD_BY_INTENT
+        return thresholds.get(intent, THRESHOLD_DEFAULT)
 
     def match(self, message: str) -> tuple[str | None, float]:
         message_vec = get_embedding(message)
