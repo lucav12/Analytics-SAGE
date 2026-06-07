@@ -175,6 +175,26 @@ def _contains_any(text: str, keywords: list[str]) -> bool:
     return any(keyword in text for keyword in keywords)
 
 
+def has_explicit_sentiment(message: str) -> bool:
+    """¿El mensaje contiene una keyword INEQUÍVOCA de sentimiento?
+
+    Sirve como "capa 3" de detección de feedback en agent.py — un override
+    bulletproof por encima del IntentMatcher (capa 1) y el FeedbackDetector
+    semántico (capa 2). Captura casos tipo "me gustaron mucho los discursos"
+    donde el embedding semántico se confunde por el sustantivo específico
+    pero la intención de feedback es clara por las palabras de sentimiento.
+
+    Usa las MISMAS keywords que el scoring de happiness, con la misma
+    detección de negaciones (positivas con `no` adelante NO disparan).
+    """
+    normalized = _normalize_text(message)
+    if _contains_positive(normalized, POSITIVE_KEYWORDS):
+        return True
+    if _contains_negative(normalized, NEGATIVE_KEYWORDS):
+        return True
+    return False
+
+
 def classify_feedback(message: str) -> list[str]:
     matches = classify_feedback_with_scores(message)
     return [intent for intent, _ in matches] or [DEFAULT_FEEDBACK_CATEGORY]

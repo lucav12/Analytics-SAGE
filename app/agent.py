@@ -4,7 +4,7 @@ import time
 import os
 import threading
 
-from feedback import save_feedback
+from feedback import save_feedback, has_explicit_sentiment
 from embeddings import IntentMatcher, get_feedback_detector
 import db  # Persistencia opcional en Postgres (no-op si DATABASE_URL no está seteada)
 
@@ -182,9 +182,14 @@ class SageAgent:
         except Exception as e:
             print(f"[EVA DB] No se pudo persistir mensaje assistant: {e}")
 
-        # Detección de feedback en dos capas:
+        # Detección de feedback en TRES capas con fallback:
         #   (1) intent matcher principal — categoría "feedback" del catálogo INTENTS;
-        #   (2) FeedbackDetector binario — compara contra un corpus de opiniones.
+        #   (2) FeedbackDetector binario — compara contra un corpus de opiniones;
+        #   (3) override por keywords explícitos de sentimiento — agarra casos
+        #       semánticamente fuzzy pero léxicamente inequívocos como
+        #       "me gustaron mucho los discursos" (que la capa 2 se pierde
+        #       porque el sustantivo específico tira la similitud para el lado
+        #       de info_egresados / info_agenda en vez de feedback).
         # save_feedback() después clasifica multi-categoría y calcula
         # happiness/NPS/return_likelihood (ver feedback.py).
         is_feedback = intent == "feedback"
@@ -192,6 +197,9 @@ class SageAgent:
         if not is_feedback:
             is_feedback, _ = get_feedback_detector().is_feedback(user_message)
             feedback_source = "auto_detector"
+        if not is_feedback and has_explicit_sentiment(user_message):
+            is_feedback = True
+            feedback_source = "auto_detector"  # subsume bajo el source existente
         if is_feedback:
             save_feedback(
                 self.session_id,
