@@ -191,6 +191,18 @@ FEEDBACK_DETECTION_EXAMPLES = [
     "la planificación estuvo excelente",
     "no me gusta la comida",
     "me gusta mucho la ceremonia",
+    # Negación de gusto sobre sustantivos de categorías. Sin estas frases, el
+    # sustantivo (catering, comida, bebidas) domina la similitud y el detector
+    # se confunde con info_catering — ver issue del 06/2026.
+    "no me gustó el catering",
+    "no me gustaron las bebidas",
+    "no me gustó la comida del catering",
+    "el catering estuvo mal",
+    "el catering me decepcionó",
+    "no me gustó la organización",
+    "no me gustó la ceremonia",
+    "no me gustó la recepción",
+    "no me gustó cómo nos atendieron",
     # Quejas experienciales con juicio implícito
     "esperé muchísimo para acreditarme",
     "tardé una hora en entrar",
