@@ -97,15 +97,28 @@ def _get_feedback_classifier() -> IntentMatcher:
 
 POSITIVE_KEYWORDS = [
     "excelente", "muy bien", "me encantó", "felicitaciones", "perfecto", "genial",
-    "fantástico", "muy bueno", "recomend", "me gustó", "estuvo bien", "buenísimo",
+    "fantástico", "muy bueno", "recomend", "estuvo bien", "buenísimo",
     "increíble", "maravilloso", "espectacular", "impecable", "brillante",
     "muy lindo", "hermoso", "outstanding", "notable",
+    # Conjugaciones de "gustar" — la heurística matchea por substring, así que
+    # hay que listar cada conjugación. La detección de negaciones (_is_negated)
+    # invalida estos matches cuando aparecen precedidos por "no"/"nunca"/etc.
+    "me gustó", "me gusta", "me gustaron", "me gustan",
+    # Adjetivos como "malísimo"/"espectacular" ya están arriba; agregamos
+    # variantes positivas de superlativos comunes.
+    "buenísima", "buenísimos", "buenísimas",
 ]
 NEGATIVE_KEYWORDS = [
     "horrible", "desorganizado", "lento", "problema",
     "peor", "esperé mucho", "tardaron", "falta", "deficiente",
     "decepcionante", "me decepcionó", "pésimo", "terrible",
-    "mal organizado", "estuvo mal", "no me gustó",
+    "mal organizado", "estuvo mal",
+    # Conjugaciones de "no me gusta(r)" — sin esto, "no me gustaron las bebidas"
+    # quedaba como happy=5 (neutral) cuando debería ser bajo.
+    "no me gustó", "no me gusta", "no me gustaron", "no me gustan",
+    # Superlativos negativos comunes en español.
+    "malísimo", "malísima", "malísimos", "malísimas",
+    "feísimo", "feísima",
 ]
 PROMOTER_KEYWORDS = [
     "lo recomiendo", "muy probable", "seguro lo recomendaría",
